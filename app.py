@@ -83,16 +83,65 @@ with st.sidebar:
             st.session_state.active_book = selected_book
             st.rerun()
 
+        # إحضار معلومات الكتاب المفتوح حالياً للبحث والتصفح
+        book_id = st.session_state.active_book
+        pdf_bytes = st.session_state.books_db[book_id]
+        doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+        total_pages = doc.page_count
+        st.session_state.total_pages = total_pages
+
         st.divider()
         st.markdown("### ⚙️ إعدادات العرض")
-        frame_size = st.slider("حجم إطار الكتاب (%)", min_value=30, max_value=100, value=70, help="يصغر أو يكبر مساحة عرض الكتاب")
+        frame_size = st.slider("حجم إطار الكتاب (%)", min_value=30, max_value=100, value=70)
         zoom_level = st.slider("دقة الصورة (Zoom)", 1.0, 3.0, 1.5, 0.5)
         
-        # --- [ حل مشكلة التداخل ] نقل أدوات الرسم هنا لتصبح القراءة مريحة ---
         st.markdown("### 🖍️ أدوات التحديد والرسم")
         drawing_mode = st.selectbox("الأداة النشطة:", ("freedraw", "rect"), format_func=lambda x: "قلم حر (رسم وتظليل)" if x=="freedraw" else "مربع تظليل صلب")
         stroke_color = st.color_picker("لون قلم التظليل:", "#FFFF00")
         
+        # --- [ ميزة جديدة ] محرك البحث الشامل في الكتاب ---
+        st.divider()
+        st.markdown("### 🔍 محرك البحث في الكتاب")
+        if book_id not in st.session_state.ocr_cache:
+            st.session_state.ocr_cache[book_id] = {}
+        
+        indexed_pages = len(st.session_state.ocr_cache[book_id])
+        st.write(f"الصفحات المفهرسة للبحث: {indexed_pages} من {total_pages}")
+        
+        # زر فهرسة الكتاب كاملاً
+        if indexed_pages < total_pages:
+            if st.button("⚡ بناء فهرس البحث للكتاب كاملاً"):
+                progress_bar = st.progress(0)
+                status_text = st.empty()
+                for i in range(total_pages):
+                    if i not in st.session_state.ocr_cache[book_id]:
+                        status_text.text(f"جاري قراءة وتفهرس صفحة {i+1}...")
+                        p_tmp = doc.load_page(i)
+                        # جودة متوسطة للسرعة أثناء البحث
+                        pix_tmp = p_tmp.get_pixmap(matrix=fitz.Matrix(1.5, 1.5), alpha=False)
+                        img_tmp = Image.frombytes("RGB", [pix_tmp.width, pix_tmp.height], pix_tmp.samples)
+                        text_tmp = pytesseract.image_to_string(img_tmp, lang='ara')
+                        st.session_state.ocr_cache[book_id][i] = text_tmp
+                    progress_bar.progress((i + 1) / total_pages)
+                status_text.text("✅ اكتمل بناء الفهرس بنجاح!")
+                st.rerun()
+
+        search_query = st.text_input("ابحث عن كلمة أو جملة:")
+        if search_query:
+            results = []
+            for p_num, p_text in st.session_state.ocr_cache[book_id].items():
+                if search_query.strip().lower() in p_text.lower():
+                    results.append(p_num)
+            
+            if results:
+                st.success(f"تم العثور عليها في {len(results)} صفحة:")
+                for r in results:
+                    if st.button(f"📄 الذهاب إلى صفحة {r + 1}", key=f"search_{r}"):
+                        st.session_state.current_page[book_id] = r
+                        st.rerun()
+            else:
+                st.warning("لم يتم العثور على نتائج. تأكد من كتابة الكلمة بشكل صحيح، أو اضغط زر بناء الفهرس بالأعلى.")
+
         st.divider()
         api_key = st.text_input("🔑 مفتاح Gemini API:", type="password")
         
@@ -110,8 +159,7 @@ if st.session_state.active_book and saved_books:
     book_id = st.session_state.active_book
     pdf_bytes = st.session_state.books_db[book_id]
     
-    doc = fitz.open(stream=pdf_bytes, filetype="pdf")
-    st.session_state.total_pages = doc.page_count
+    # نستخدم المستند المفتوح بالفعل
     total_pages = doc.page_count
 
     curr_page = st.session_state.current_page[book_id]
@@ -153,15 +201,21 @@ if st.session_state.active_book and saved_books:
             if view_mode == "📖 قراءة وتقليب سريع":
                 st.image(img_display, use_column_width=True)
             else:
+                # --- [ حل مشكلة الشاشة السوداء ] ---
+                # تصغير الصورة الموجهة للرسم (الحد الأقصى 600 بكسل) لمنع الانهيار وتوفير الذاكرة السحابية
+                max_w = 600
+                ratio = max_w / img_display.width
+                new_h = int(img_display.height * ratio)
+                img_canvas = img_display.resize((max_w, new_h), Image.Resampling.LANCZOS)
+
                 canvas_key = f"canvas_{book_id}_{curr_page}"
                 initial_drawing = st.session_state.drawings.get(book_id, {}).get(str(curr_page), None)
 
-                # تم استدعاء أدوات الرسم مباشرة من القائمة الجانبية هنا لمنع التداخل
                 canvas_result = st_canvas(
                     fill_color="rgba(255, 255, 0, 0.3)",
                     stroke_width=3, stroke_color=stroke_color,
-                    background_image=img_display, update_streamlit=True,
-                    height=img_display.height, width=img_display.width,
+                    background_image=img_canvas, update_streamlit=True,
+                    height=new_h, width=max_w, # استخدام الأبعاد النموذجية المصغرة هنا
                     drawing_mode=drawing_mode, key=canvas_key,
                     initial_drawing=initial_drawing
                 )
