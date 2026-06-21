@@ -6,6 +6,7 @@ import google.generativeai as genai
 import json
 import re
 import os
+import io
 
 # --- إعدادات الصفحة ---
 st.set_page_config(page_title="محرر تجوال الرقمي", layout="wide", initial_sidebar_state="expanded")
@@ -14,38 +15,25 @@ st.set_page_config(page_title="محرر تجوال الرقمي", layout="wide",
 st.markdown("""
     <style>
         .stApp { direction: rtl; font-family: 'Tajawal', sans-serif; }
-        
-        /* إزالة الخط الطولي الجانبي نهائياً حتى عند طي القائمة */
         [data-testid="stSidebar"] { border: none !important; box-shadow: -2px 0 5px rgba(0,0,0,0.05); right: 0; left: auto; }
         [data-testid="collapsedControl"] { right: 0; left: auto; }
-        
         .stButton button { width: 100%; border-radius: 8px; font-weight: bold; }
         .stTextArea textarea { text-align: right; direction: rtl; font-size: 18px; line-height: 1.6; }
         #MainMenu {visibility: hidden;}
-        
-        /* تصميم إطار الكتاب */
-        .book-frame {
-            border: 3px solid #ccc;
-            border-radius: 10px;
-            padding: 10px;
-            background-color: #f8f9fa;
-            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
-        }
-        
-        /* أزرار أطراف التقليب الخفية */
+        .book-frame { border: 3px solid #ccc; border-radius: 10px; padding: 10px; background-color: #f8f9fa; box-shadow: 0 4px 8px rgba(0,0,0,0.1); }
         .side-btn button { height: 100%; min-height: 400px; background-color: transparent; border: 1px dashed #eee; color: #888; }
         .side-btn button:hover { background-color: rgba(0, 120, 255, 0.1); color: #007bff; border: 1px solid #007bff; }
     </style>
 """, unsafe_allow_html=True)
 
-# --- إدارة الذاكرة السحابية والمحلية ---
+# --- إدارة الذاكرة ---
 if 'books_db' not in st.session_state: st.session_state.books_db = {} 
 if 'ocr_cache' not in st.session_state: st.session_state.ocr_cache = {}
 if 'current_page' not in st.session_state: st.session_state.current_page = {}
 if 'active_book' not in st.session_state: st.session_state.active_book = None
 if 'user_notes' not in st.session_state: st.session_state.user_notes = {}
 
-# --- دوال الحفظ والمزامنة التلقائية للمجلد المحلي ---
+# --- دوال الحفظ ---
 def save_workspace():
     if 'workspace_dir' in st.session_state and os.path.isdir(st.session_state.workspace_dir):
         data = {
@@ -56,7 +44,7 @@ def save_workspace():
         try:
             with open(os.path.join(st.session_state.workspace_dir, "tajawal_workspace.json"), "w", encoding="utf-8") as f:
                 json.dump(data, f, ensure_ascii=False, indent=4)
-        except Exception as e:
+        except Exception:
             pass
 
 def load_workspace(path):
@@ -68,10 +56,8 @@ def load_workspace(path):
                 st.session_state.ocr_cache = data.get("ocr_cache", {})
                 st.session_state.user_notes = data.get("user_notes", {})
                 st.session_state.current_page = data.get("current_page", {})
-        except Exception as e:
+        except Exception:
             pass
-    
-    # تحميل الكتب تلقائياً
     for file_name in os.listdir(path):
         if file_name.lower().endswith(".pdf"):
             if file_name not in st.session_state.books_db:
@@ -80,10 +66,10 @@ def load_workspace(path):
                         st.session_state.books_db[file_name] = f.read()
                         if file_name not in st.session_state.current_page:
                             st.session_state.current_page[file_name] = 0
-                except Exception as e:
+                except Exception:
                     pass
 
-# --- دوال التنقل ---
+# --- التنقل ---
 def go_next():
     if st.session_state.active_book in st.session_state.current_page:
         if st.session_state.current_page[st.session_state.active_book] < st.session_state.total_pages - 1:
@@ -106,24 +92,22 @@ def jump_to_page(page_idx):
 with st.sidebar:
     st.title("📚 مكتبتي السحابية")
     
-    # --- قسم المزامنة (اختياري) ---
-    st.markdown("### 📂 مسار الحفظ التلقائي (اختياري)")
-    st.markdown("<small style='color:gray'>لأجهزة الكمبيوتر فقط: ضع مسار مجلد لحفظ عملك تلقائياً. (إذا كنت من الجوال تجاهل هذا المربع)</small>", unsafe_allow_html=True)
+    st.markdown("### 📂 مسار الحفظ (للاستخدام المحلي فقط)")
     workspace_input = st.text_input("المسار (مثال: C:/MyBooks):", value=st.session_state.get('workspace_dir', ''))
     
     if st.button("🔄 ربط المجلد"):
-        if workspace_input.strip() and os.path.isdir(workspace_input.strip()):
-            st.session_state.workspace_dir = workspace_input.strip()
-            load_workspace(st.session_state.workspace_dir)
+        # معالجة المسار لتجنب أخطاء الويندوز (إزالة علامات التنصيص وتعديل الشرطات)
+        clean_path = workspace_input.strip().strip('"').strip("'").replace('\\', '/')
+        if clean_path and os.path.isdir(clean_path):
+            st.session_state.workspace_dir = clean_path
+            load_workspace(clean_path)
             st.success("✅ تم ربط المجلد بنجاح!")
             st.rerun()
         else:
-            # رسالة تحذيرية لا توقف عمل البرنامج
-            st.warning("⚠️ المسار غير موجود. يمكنك تجاهل هذا الخيار ورفع الكتاب مباشرة من الزر بالأسفل.")
+            st.warning("⚠️ المسار غير موجود (إذا كنت تستخدم نسخة سحابية Cloud، تجاهل هذا الخيار واستخدم الرفع أدناه).")
 
     st.divider()
     
-    # --- قسم إضافة الكتب (تم إصلاحه ليعمل فوراً) ---
     st.markdown("### 📥 رفع كتاب جديد")
     uploaded_files = st.file_uploader("اختر ملف PDF من جهازك", type=["pdf"], accept_multiple_files=True)
     
@@ -137,7 +121,6 @@ with st.sidebar:
                 st.session_state.active_book = file.name
                 new_books_added = True
                 
-                # حفظ نسخة في المجلد (إن وُجد) بصمت بدون التأثير على رفع الملف
                 if 'workspace_dir' in st.session_state and os.path.isdir(st.session_state.workspace_dir):
                     try:
                         with open(os.path.join(st.session_state.workspace_dir, file.name), "wb") as f:
@@ -204,9 +187,11 @@ if st.session_state.active_book and saved_books:
     # القسم الأيمن: المستند والإطار والتنقل
     # -----------------------------
     with main_col_pdf:
+        # **الحل الجديد هنا: تحويل آمن لمختلف صيغ الألوان**
         page = doc.load_page(curr_page)
         pix = page.get_pixmap(matrix=fitz.Matrix(zoom_level, zoom_level), alpha=False)
-        img_display = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
+        img_bytes = pix.tobytes("png")  # تحويل آمن إلى صيغة PNG مهما كانت صيغة ألوان الكتاب الأصلية
+        img_display = Image.open(io.BytesIO(img_bytes))
 
         st.markdown('<div class="book-frame">', unsafe_allow_html=True)
         
@@ -247,8 +232,6 @@ if st.session_state.active_book and saved_books:
         if book_id not in st.session_state.ocr_cache: st.session_state.ocr_cache[book_id] = {}
         
         with st.expander("📥 / 📤 تصدير واستيراد النص (ملف TXT)"):
-            st.markdown("يمكنك تنزيل نصوص الكتاب كملف نصي، أو رفع ملف نصي تم تصحيحه مسبقاً لعرضه مع الصفحات.")
-            
             full_text = ""
             for p in range(total_pages):
                 p_text = st.session_state.ocr_cache.get(book_id, {}).get(str(p), "")
