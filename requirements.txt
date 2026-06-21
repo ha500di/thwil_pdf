@@ -3,3 +3,4 @@ pymupdf
 pytesseract
 pillow
 google-generativeai
+streamlit-drawable-canvas
