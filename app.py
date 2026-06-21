@@ -10,7 +10,7 @@ from streamlit_drawable_canvas import st_canvas
 # --- إعدادات الصفحة ---
 st.set_page_config(page_title="محرر تجوال الرقمي", layout="wide", initial_sidebar_state="expanded")
 
-# --- CSS ---
+# --- CSS لتحسين الأزرار وتصميم الإطار ---
 st.markdown("""
     <style>
         .stApp { direction: rtl; font-family: 'Tajawal', sans-serif; }
@@ -47,12 +47,14 @@ if 'drawings' not in st.session_state: st.session_state.drawings = {}
 
 # --- دوال التنقل ---
 def go_next():
-    if st.session_state.current_page[st.session_state.active_book] < st.session_state.total_pages - 1:
-        st.session_state.current_page[st.session_state.active_book] += 1
+    if st.session_state.active_book in st.session_state.current_page:
+        if st.session_state.current_page[st.session_state.active_book] < st.session_state.total_pages - 1:
+            st.session_state.current_page[st.session_state.active_book] += 1
 
 def go_prev():
-    if st.session_state.current_page[st.session_state.active_book] > 0:
-        st.session_state.current_page[st.session_state.active_book] -= 1
+    if st.session_state.active_book in st.session_state.current_page:
+        if st.session_state.current_page[st.session_state.active_book] > 0:
+            st.session_state.current_page[st.session_state.active_book] -= 1
 
 # ==========================================
 # 1. القائمة الجانبية
@@ -63,12 +65,12 @@ with st.sidebar:
     uploaded_files = st.file_uploader("📥 إضافة كتاب PDF", type=["pdf"], accept_multiple_files=True)
     if uploaded_files:
         for file in uploaded_files:
-            st.session_state.books_db[file.name] = file.getvalue()
-            if file.name not in st.session_state.current_page:
+            # حفظ في الذاكرة فقط إذا لم يكن موجوداً لتجنب حلقة التحديث اللانهائية
+            if file.name not in st.session_state.books_db:
+                st.session_state.books_db[file.name] = file.getvalue()
                 st.session_state.current_page[file.name] = 0
-            st.session_state.active_book = file.name
+                st.session_state.active_book = file.name
         st.success("تم الحفظ في الذاكرة بنجاح!")
-        st.rerun()
 
     st.divider()
 
@@ -97,9 +99,8 @@ with st.sidebar:
 # ==========================================
 # 2. منطقة العرض الرئيسية
 # ==========================================
-st.header(f"📖 {st.session_state.active_book}" if st.session_state.active_book else "محرر تجوال الرقمي")
-
 if st.session_state.active_book and saved_books:
+    st.header(f"📖 {st.session_state.active_book}")
     book_id = st.session_state.active_book
     pdf_bytes = st.session_state.books_db[book_id]
     
@@ -144,7 +145,6 @@ if st.session_state.active_book and saved_books:
             
         with book_col:
             if view_mode == "📖 قراءة وتقليب سريع":
-                # --- [ التعديل هنا ] تم تغيير المتغير ليتوافق مع الإصدار 1.35.0 ---
                 st.image(img_display, use_column_width=True)
             else:
                 draw_col1, draw_col2 = st.columns([2, 1])
@@ -229,3 +229,14 @@ if st.session_state.active_book and saved_books:
             st.success("تم الحفظ!")
 
     doc.close()
+else:
+    # واجهة ترحيبية أنيقة تمنع الشاشة السوداء في البداية
+    st.markdown("""
+    <div style="text-align: center; padding: 100px 20px;">
+        <h1 style="color: #007bff; font-family: 'Tajawal', sans-serif;">📚 مرحباً بك في محرر تجوال الرقمي</h1>
+        <p style="font-size: 20px; color: #666; margin-top: 20px;">تطبيقك السحابي الذكي لقراءة الكتب، تظليل النصوص، وتصحيحها بالذكاء الاصطناعي.</p>
+        <div style="background-color: #f1f3f5; padding: 20px; border-radius: 10px; display: inline-block; margin-top: 30px; border: 1px solid #e0e0e0;">
+            <p style="font-size: 18px; color: #333; margin: 0;">👉 <b>للبدء:</b> يرجى رفع ملف PDF من القائمة الجانبية على اليمين.</p>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
