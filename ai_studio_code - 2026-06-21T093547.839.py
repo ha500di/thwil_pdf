@@ -1,4 +1,28 @@
 import streamlit as st
+
+# --- الحل السحري لمشكلة لوحة الرسم مع تحديثات Streamlit الجديدة ---
+import streamlit.elements.image as st_image
+if not hasattr(st_image, 'image_to_url'):
+    try:
+        from streamlit.elements.lib.image_utils import image_to_url
+        st_image.image_to_url = image_to_url
+    except ImportError:
+        pass
+# -------------------------------------------------------------------
+
+import fitz  # PyMuPDF
+import pytesseract
+from PIL import Image
+import google.generativeai as genai
+import os
+import json
+import shutil
+import re
+from streamlit_drawable_canvas import st_canvas
+
+# --- إعدادات الصفحة الأساسية ---
+# (أكمل باقي الكود الخاص بك بشكل طبيعي كما هو من هنا فصاعداً...)
+import streamlit as st
 import fitz  # PyMuPDF
 import pytesseract
 from PIL import Image
