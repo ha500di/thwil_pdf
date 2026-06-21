@@ -138,7 +138,6 @@ with st.sidebar:
         st.divider()
         st.markdown("### 💾 النسخة الاحتياطية (مهم للحفظ)")
         
-        # 1. زر تحميل ملف الحفظ إلى جهاز المستخدم
         if os.path.exists(SAVE_FILE):
             with open(SAVE_FILE, "rb") as f:
                 st.download_button(
@@ -149,7 +148,6 @@ with st.sidebar:
                     help="حمل هذا الملف لتأمين كتبك وملاحظاتك وإعادة رفعها لاحقاً."
                 )
         
-        # 2. زر رفع ملف الحفظ من جهاز المستخدم
         uploaded_save = st.file_uploader("⬆️ استعادة جلسة سابقة (.pkl)", type=["pkl"])
         if uploaded_save:
             if st.button("🔄 تأكيد الاستعادة", type="primary"):
@@ -171,7 +169,6 @@ with st.sidebar:
     else:
         st.info("لا توجد كتب، ارفع كتاباً للبدء.")
         
-        # السماح باستعادة جلسة حتى لو لم يكن هناك كتب مرفوعة بعد
         uploaded_save = st.file_uploader("⬆️ أو استعد جلسة سابقة (.pkl)", type=["pkl"])
         if uploaded_save:
             if st.button("🔄 تأكيد الاستعادة", type="primary"):
@@ -266,19 +263,52 @@ if st.session_state.active_book and saved_books:
             st.button("◀ التالي", key="bot_next", on_click=go_next, use_container_width=True)
 
     # -----------------------------
-    # القسم الأيسر: النص المستخرج
+    # القسم الأيسر: النص المستخرج والتصدير/البحث
     # -----------------------------
     with main_col_text:
-        st.subheader("📝 النص المستخرج")
+        st.subheader("📝 أدوات معالجة النصوص")
         
         if book_id not in st.session_state.ocr_cache: st.session_state.ocr_cache[book_id] = {}
-        
-        with st.expander("📥 / 📤 تصدير واستيراد النص (ملف TXT)"):
-            st.markdown("يمكنك تنزيل نصوص الكتاب كملف نصي، أو رفع ملف نصي تم تصحيحه مسبقاً لعرضه مع الصفحات.")
+
+        # ---------------- القسم الجديد: الفهرسة الشاملة ----------------
+        with st.expander("⚡ فهرسة واستخراج كامل نصوص الكتاب (للتنزيل والبحث)", expanded=False):
+            st.info("لتتمكن من تنزيل الكتاب كاملاً كنص أو البحث في جميع صفحاته، يجب استخراج النص من كامل الصفحات أولاً.")
             
+            extract_mode = st.radio("طريقة الاستخراج:", 
+                                    ["استخراج سريع (للملفات التي تحتوي نصاً داخلياً)", 
+                                     "قراءة ضوئية OCR (للملفات المصورة - يستغرق وقتاً)"])
+            
+            if st.button("🚀 بدء فهرسة جميع الصفحات", type="primary", use_container_width=True):
+                progress_text = "جاري الفهرسة... يرجى الانتظار"
+                progress_bar = st.progress(0, text=progress_text)
+                
+                for p in range(total_pages):
+                    # التخطي إذا كانت الصفحة مقروءة مسبقاً
+                    if p not in st.session_state.ocr_cache[book_id] or st.session_state.ocr_cache[book_id][p] == "":
+                        page_obj = doc.load_page(p)
+                        if "استخراج سريع" in extract_mode:
+                            text = page_obj.get_text("text").strip()
+                        else:
+                            pix_temp = page_obj.get_pixmap(matrix=fitz.Matrix(1.5, 1.5))
+                            img_temp = Image.frombytes("RGB", [pix_temp.width, pix_temp.height], pix_temp.samples)
+                            text = pytesseract.image_to_string(img_temp, lang='ara').strip()
+                        
+                        st.session_state.ocr_cache[book_id][p] = text
+                    
+                    progress_bar.progress((p + 1) / total_pages, text=f"تمت معالجة صفحة {p+1} من {total_pages}")
+                
+                save_workspace()
+                st.success("تمت فهرسة الكتاب بنجاح! يمكنك الآن البحث وتنزيل نصوص الكتاب كاملة.")
+                st.rerun()
+
+        # ---------------- قسم التصدير والاستيراد ----------------
+        with st.expander("📥 / 📤 تصدير واستيراد النص (ملف TXT)"):
+            st.markdown("يمكنك تنزيل نصوص الكتاب كملف نصي، وتعديله، ثم رفعه مرة أخرى.")
+            
+            # تجميع النص للتحميل
             full_text = ""
             for p in range(total_pages):
-                p_text = st.session_state.ocr_cache.get(book_id, {}).get(p, "")
+                p_text = st.session_state.ocr_cache.get(book_id, {}).get(p, "لا يوجد نص مستخرج لهذه الصفحة بعد.")
                 full_text += f"--- [صفحة {p + 1}] ---\n{p_text}\n\n"
                 
             st.download_button(
@@ -291,27 +321,30 @@ if st.session_state.active_book and saved_books:
             
             st.divider()
             
-            uploaded_txt = st.file_uploader("📂 رفع ملف نصي (تم تنزيله مسبقاً)", type=["txt"])
+            uploaded_txt = st.file_uploader("📂 رفع ملف نصي (لإعادة توزيع النصوص)", type=["txt"])
             if uploaded_txt:
                 content = uploaded_txt.getvalue().decode("utf-8")
                 pages_text = re.split(r'--- \[صفحة \d+\] ---', content)
                 
+                # إزالة العنصر الأول إذا كان فارغاً بسبب القص
                 if pages_text and pages_text[0].strip() == "":
                     pages_text = pages_text[1:]
                 
-                if st.button("✅ تأكيد استيراد وتوزيع النص على الصفحات", type="primary", use_container_width=True):
+                if st.button("✅ تأكيد الاستيراد والتوزيع على الصفحات", type="primary", use_container_width=True):
                     for i, text in enumerate(pages_text):
                         if i < total_pages:
                             st.session_state.ocr_cache[book_id][i] = text.strip()
                     save_workspace()
-                    st.success("تم توزيع النصوص على صفحات الكتاب بنجاح!")
+                    st.success("تم توزيع النصوص المصححة على صفحات الكتاب بنجاح!")
                     st.rerun()
 
+        # ---------------- قسم البحث ----------------
         with st.expander("🔍 البحث في نصوص الكتاب"):
             search_query = st.text_input("أدخل الكلمة أو العبارة للبحث:")
             if search_query:
                 found_pages = []
-                for p_idx, text in st.session_state.ocr_cache.get(book_id, {}).items():
+                for p_idx in range(total_pages):
+                    text = st.session_state.ocr_cache.get(book_id, {}).get(p_idx, "")
                     if text and search_query in text:
                         found_pages.append(p_idx)
                 
@@ -321,23 +354,32 @@ if st.session_state.active_book and saved_books:
                     for i, p_idx in enumerate(found_pages):
                         col = cols[i % 5]
                         with col:
-                            if st.button(f"صفحة {p_idx + 1}", key=f"jump_{p_idx}"):
+                            if st.button(f"صفحة {p_idx + 1}", key=f"jump_search_{p_idx}"):
                                 jump_to_page(p_idx)
                                 st.rerun()
                 else:
-                    st.warning("⚠️ لم يتم العثور على الكلمة.")
+                    st.warning("⚠️ لم يتم العثور على الكلمة. (تأكد من أنك قمت بعمل 'فهرسة' للكتاب من الزر في الأعلى)")
 
+        # ---------------- قراءة الصفحة الحالية (Lazy Load كاحتياط) ----------------
+        st.divider()
+        st.markdown(f"**محرر نصوص (صفحة {curr_page + 1}):**")
+        
         if curr_page not in st.session_state.ocr_cache[book_id] or st.session_state.ocr_cache[book_id][curr_page] == "":
-            with st.spinner("جاري قراءة الصفحة..."):
+            with st.spinner("جاري قراءة الصفحة الحالية..."):
                 try:
-                    extracted_text = pytesseract.image_to_string(img_display, lang='ara')
+                    # نستخدم أولاً الاستخراج السريع، وإذا كان فارغاً نلجأ للـ OCR
+                    text_extracted = doc.load_page(curr_page).get_text("text").strip()
+                    if len(text_extracted) < 10:  # إذا كان النص قليلاً جداً أو فارغاً، ربما يكون الكتاب مصوراً
+                        extracted_text = pytesseract.image_to_string(img_display, lang='ara')
+                    else:
+                        extracted_text = text_extracted
                     st.session_state.ocr_cache[book_id][curr_page] = extracted_text
                 except Exception as e:
                     st.session_state.ocr_cache[book_id][curr_page] = ""
         
         current_text = st.session_state.ocr_cache[book_id][curr_page]
 
-        if st.button("🤖 تصحيح النص آلياً (مطابقة 100%)", type="primary"):
+        if st.button("🤖 تصحيح النص آلياً (مطابقة 100%)", type="primary", use_container_width=True):
             if not api_key: st.error("أدخل مفتاح API في القائمة الجانبية أولاً.")
             else:
                 with st.spinner("جاري التصحيح..."):
@@ -351,7 +393,7 @@ if st.session_state.active_book and saved_books:
                     except Exception as e:
                         st.error(f"خطأ: {e}")
 
-        edited_text = st.text_area("محرر النص:", value=st.session_state.ocr_cache[book_id][curr_page], height=400, label_visibility="collapsed")
+        edited_text = st.text_area("تعديل النص:", value=st.session_state.ocr_cache[book_id][curr_page], height=350, label_visibility="collapsed")
         if edited_text != st.session_state.ocr_cache[book_id][curr_page]:
             st.session_state.ocr_cache[book_id][curr_page] = edited_text
             save_workspace()
