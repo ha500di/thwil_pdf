@@ -10,7 +10,7 @@ from streamlit_drawable_canvas import st_canvas
 # --- إعدادات الصفحة ---
 st.set_page_config(page_title="محرر تجوال الرقمي", layout="wide", initial_sidebar_state="expanded")
 
-# --- CSS لتحسين الأزرار وتصميم الإطار ---
+# --- CSS ---
 st.markdown("""
     <style>
         .stApp { direction: rtl; font-family: 'Tajawal', sans-serif; }
@@ -28,7 +28,7 @@ st.markdown("""
             box-shadow: 0 4px 8px rgba(0,0,0,0.1);
         }
         
-        /* إخفاء خلفيات أزرار الأطراف لجعلها كأنها جزء من الشاشة */
+        /* أزرار أطراف التقليب الخفية */
         .side-btn button { height: 100%; min-height: 400px; background-color: transparent; border: 1px dashed #eee; color: #888; }
         .side-btn button:hover { background-color: rgba(0, 120, 255, 0.1); color: #007bff; border: 1px solid #007bff; }
     </style>
@@ -84,7 +84,6 @@ with st.sidebar:
 
         st.divider()
         st.markdown("### ⚙️ إعدادات العرض")
-        # أداة التحكم بحجم الكتاب بنسبة مئوية
         frame_size = st.slider("حجم إطار الكتاب (%)", min_value=30, max_value=100, value=70, help="يصغر أو يكبر مساحة عرض الكتاب")
         zoom_level = st.slider("دقة الصورة (Zoom)", 1.0, 3.0, 1.5, 0.5)
         api_key = st.text_input("🔑 مفتاح Gemini API:", type="password")
@@ -113,31 +112,29 @@ if st.session_state.active_book and saved_books:
     if curr_page < 0: st.session_state.current_page[book_id] = 0
     curr_page = st.session_state.current_page[book_id]
 
+    page_input = st.number_input(f"الصفحة الحالية (من {total_pages}):", min_value=1, max_value=total_pages, value=curr_page + 1)
+    if page_input - 1 != curr_page:
+        st.session_state.current_page[book_id] = page_input - 1
+        st.rerun()
+
     main_col_pdf, main_col_text = st.columns([1.5, 1])
 
     # -----------------------------
     # القسم الأيمن: المستند والإطار والتنقل
     # -----------------------------
     with main_col_pdf:
-        # خيار العرض (لضمان سرعة التصفح)
         view_mode = st.radio("اختر وضع العرض:", ["📖 قراءة وتقليب سريع", "🖍️ تحديد ورسم"], horizontal=True, label_visibility="collapsed")
         
-        # --- استخراج وتجهيز الصورة بخلفية بيضاء مضمونة ---
         page = doc.load_page(curr_page)
         pix = page.get_pixmap(matrix=fitz.Matrix(zoom_level, zoom_level), alpha=True)
         img_transparent = Image.frombytes("RGBA", [pix.width, pix.height], pix.samples)
         
-        # إنشاء خلفية بيضاء صلبة ودمجها لحل مشكلة الشاشة السوداء نهائياً
         img_display = Image.new("RGB", img_transparent.size, (255, 255, 255))
         img_display.paste(img_transparent, mask=img_transparent.split()[3])
 
         st.markdown('<div class="book-frame">', unsafe_allow_html=True)
         
-        # --- تصميم أطراف التقليب وحجم الإطار ---
-        # نقوم بتقسيم المساحة بناءً على نسبة الحجم (frame_size) التي اختارها المستخدم
         spacer_width = (100 - frame_size) / 2
-        
-        # ترتيب الأعمدة: يمين (زر السابق)، وسط (الكتاب)، يسار (زر التالي)
         nav_right, book_col, nav_left = st.columns([max(spacer_width, 10), frame_size, max(spacer_width, 10)])
         
         with nav_right:
@@ -147,10 +144,9 @@ if st.session_state.active_book and saved_books:
             
         with book_col:
             if view_mode == "📖 قراءة وتقليب سريع":
-                # العرض السريع والممتاز (يتأقلم مع حجم الإطار)
-                st.image(img_display, use_container_width=True)
+                # --- [ التعديل هنا ] تم تغيير المتغير ليتوافق مع الإصدار 1.35.0 ---
+                st.image(img_display, use_column_width=True)
             else:
-                # وضع الرسم
                 draw_col1, draw_col2 = st.columns([2, 1])
                 with draw_col1: drawing_mode = st.selectbox("الأداة:", ("freedraw", "rect"), format_func=lambda x: "قلم حر" if x=="freedraw" else "مربع تحديد")
                 with draw_col2: stroke_color = st.color_picker("اللون:", "#FFFF00")
@@ -175,10 +171,9 @@ if st.session_state.active_book and saved_books:
             st.button("◀\nلـلأـمـام", key="side_next", on_click=go_next, use_container_width=True)
             st.markdown('</div>', unsafe_allow_html=True)
             
-        st.markdown('</div>', unsafe_allow_html=True) # إغلاق إطار الكتاب
+        st.markdown('</div>', unsafe_allow_html=True) 
 
-        # --- أزرار التنقل السفلية في الزوايا ---
-        st.write("") # مسافة
+        st.write("") 
         bot_prev, bot_center, bot_next = st.columns([1, 2, 1])
         with bot_prev:
             st.button("السابق ▶", key="bot_prev", on_click=go_prev, use_container_width=True)
@@ -186,7 +181,6 @@ if st.session_state.active_book and saved_books:
             st.markdown(f"<h5 style='text-align: center; color: #555;'>صفحة {curr_page + 1} من {total_pages}</h5>", unsafe_allow_html=True)
         with bot_next:
             st.button("◀ التالي", key="bot_next", on_click=go_next, use_container_width=True)
-
 
     # -----------------------------
     # القسم الأيسر: النص المستخرج
@@ -199,7 +193,6 @@ if st.session_state.active_book and saved_books:
         if curr_page not in st.session_state.ocr_cache[book_id]:
             with st.spinner("جاري قراءة الصفحة..."):
                 try:
-                    # نستخدم النسخة ذات الخلفية البيضاء لضمان قراءة OCR ممتازة
                     extracted_text = pytesseract.image_to_string(img_display, lang='ara')
                     st.session_state.ocr_cache[book_id][curr_page] = extracted_text
                 except Exception as e:
