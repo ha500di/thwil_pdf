@@ -22,10 +22,13 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # --- إدارة الذاكرة السحابية (Session State) ---
-# حفظ الكتب في الذاكرة بدلاً من المجلدات لمنع مسحها في الخادم السحابي
 if 'books_db' not in st.session_state: st.session_state.books_db = {} 
 if 'ocr_cache' not in st.session_state: st.session_state.ocr_cache = {}
-if 'current_page' not in st.session_state: st.session_state.current_page = {}
+
+# --- [ هنا يكمن الحل ] التأكد من مسح الذاكرة القديمة إذا كانت رقماً ---
+if 'current_page' not in st.session_state or not isinstance(st.session_state.current_page, dict): 
+    st.session_state.current_page = {}
+    
 if 'active_book' not in st.session_state: st.session_state.active_book = None
 if 'user_notes' not in st.session_state: st.session_state.user_notes = {}
 if 'drawings' not in st.session_state: st.session_state.drawings = {}
@@ -40,7 +43,6 @@ with st.sidebar:
     uploaded_files = st.file_uploader("📥 إضافة كتاب PDF", type=["pdf"], accept_multiple_files=True)
     if uploaded_files:
         for file in uploaded_files:
-            # حفظ الكتاب كبيانات (Bytes) في الذاكرة
             st.session_state.books_db[file.name] = file.getvalue()
             if file.name not in st.session_state.current_page:
                 st.session_state.current_page[file.name] = 0
@@ -99,6 +101,11 @@ with st.sidebar:
         st.divider()
         zoom_level = st.slider("دقة الصورة", 1.0, 3.0, 1.5, 0.5)
         api_key = st.text_input("🔑 مفتاح Gemini API:", type="password")
+        
+        # زر إضافي لمسح الذاكرة يدوياً إذا احتجت
+        if st.button("🧹 مسح الذاكرة بالكامل", type="secondary"):
+            st.session_state.clear()
+            st.rerun()
     else:
         st.info("لا توجد كتب، ارفع كتاباً للبدء.")
 
@@ -111,7 +118,6 @@ if st.session_state.active_book and saved_books:
     book_id = st.session_state.active_book
     pdf_bytes = st.session_state.books_db[book_id]
     
-    # فتح الـ PDF من الذاكرة مباشرة بدلاً من الملفات
     doc = fitz.open(stream=pdf_bytes, filetype="pdf")
     total_pages = doc.page_count
 
@@ -127,9 +133,6 @@ if st.session_state.active_book and saved_books:
 
     main_col_pdf, main_col_text = st.columns([1.2, 1])
 
-    # -----------------------------
-    # القسم الأيمن: المستند وأدوات الرسم
-    # -----------------------------
     with main_col_pdf:
         st.subheader("🖍️ المستند الأصلي (تحديد ورسم)")
         
@@ -166,9 +169,6 @@ if st.session_state.active_book and saved_books:
         if canvas_result.json_data is not None:
             st.session_state.drawings[book_id][str(curr_page)] = canvas_result.json_data
 
-    # -----------------------------
-    # القسم الأيسر: النص والذكاء الاصطناعي
-    # -----------------------------
     with main_col_text:
         st.subheader("📝 النص المستخرج")
         
