@@ -1,6 +1,6 @@
 streamlit==1.35.0
 pymupdf
 pytesseract
-pillow
+pillow==10.2.0
 google-generativeai
 streamlit-drawable-canvas
