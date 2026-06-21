@@ -56,6 +56,9 @@ def go_prev():
         if st.session_state.current_page[st.session_state.active_book] > 0:
             st.session_state.current_page[st.session_state.active_book] -= 1
 
+def jump_to_page(page_idx):
+    st.session_state.current_page[st.session_state.active_book] = page_idx
+
 # ==========================================
 # 1. القائمة الجانبية
 # ==========================================
@@ -192,16 +195,14 @@ if st.session_state.active_book and saved_books:
         if book_id not in st.session_state.ocr_cache: st.session_state.ocr_cache[book_id] = {}
         
         # ==========================================
-        # إضافة جديدة: رفع وتنزيل الملف النصي للكتاب
+        # 1. التصدير والاستيراد
         # ==========================================
         with st.expander("📥 / 📤 تصدير واستيراد النص (ملف TXT)"):
             st.markdown("يمكنك تنزيل نصوص الكتاب كملف نصي، أو رفع ملف نصي تم تصحيحه مسبقاً لعرضه مع الصفحات.")
             
-            # 1. تجميع وتنزيل النص
             full_text = ""
             for p in range(total_pages):
                 p_text = st.session_state.ocr_cache.get(book_id, {}).get(p, "")
-                # وضع فاصل برمجي للتعرف على الصفحات عند إعادة الرفع
                 full_text += f"--- [صفحة {p + 1}] ---\n{p_text}\n\n"
                 
             st.download_button(
@@ -214,14 +215,11 @@ if st.session_state.active_book and saved_books:
             
             st.divider()
             
-            # 2. رفع واستيراد النص
             uploaded_txt = st.file_uploader("📂 رفع ملف نصي (تم تنزيله مسبقاً)", type=["txt"])
             if uploaded_txt:
                 content = uploaded_txt.getvalue().decode("utf-8")
-                # تقسيم النص بناءً على الفواصل التي أنشأناها
                 pages_text = re.split(r'--- \[صفحة \d+\] ---', content)
                 
-                # حذف العنصر الأول إذا كان فارغاً قبل الفاصل الأول
                 if pages_text and pages_text[0].strip() == "":
                     pages_text = pages_text[1:]
                 
@@ -231,8 +229,35 @@ if st.session_state.active_book and saved_books:
                             st.session_state.ocr_cache[book_id][i] = text.strip()
                     st.success("تم توزيع النصوص على صفحات الكتاب بنجاح!")
                     st.rerun()
-        # ==========================================
 
+        # ==========================================
+        # 2. ميزة البحث في النصوص (جديد)
+        # ==========================================
+        with st.expander("🔍 البحث في نصوص الكتاب"):
+            search_query = st.text_input("أدخل الكلمة أو العبارة للبحث:")
+            if search_query:
+                found_pages = []
+                for p_idx, text in st.session_state.ocr_cache.get(book_id, {}).items():
+                    if text and search_query in text:
+                        found_pages.append(p_idx)
+                
+                if found_pages:
+                    st.success(f"✅ تم العثور على '{search_query}' في {len(found_pages)} صفحة/صفحات.")
+                    
+                    # عرض أزرار انتقال سريع للصفحات التي توجد بها الكلمة
+                    cols = st.columns(min(len(found_pages), 5)) # عرض حتى 5 أزرار في السطر
+                    for i, p_idx in enumerate(found_pages):
+                        col = cols[i % 5]
+                        with col:
+                            if st.button(f"صفحة {p_idx + 1}", key=f"jump_{p_idx}"):
+                                jump_to_page(p_idx)
+                                st.rerun()
+                else:
+                    st.warning("⚠️ لم يتم العثور على الكلمة. (ملاحظة: البحث يتم داخل الصفحات التي تم استخراج نصها أو استيرادها فقط)")
+
+        # ==========================================
+        # 3. محرر النص الذكي والتعليقات
+        # ==========================================
         if curr_page not in st.session_state.ocr_cache[book_id] or st.session_state.ocr_cache[book_id][curr_page] == "":
             with st.spinner("جاري قراءة الصفحة..."):
                 try:
