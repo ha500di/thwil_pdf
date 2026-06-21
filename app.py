@@ -65,7 +65,6 @@ with st.sidebar:
     uploaded_files = st.file_uploader("📥 إضافة كتاب PDF", type=["pdf"], accept_multiple_files=True)
     if uploaded_files:
         for file in uploaded_files:
-            # حفظ في الذاكرة فقط إذا لم يكن موجوداً لتجنب حلقة التحديث اللانهائية
             if file.name not in st.session_state.books_db:
                 st.session_state.books_db[file.name] = file.getvalue()
                 st.session_state.current_page[file.name] = 0
@@ -88,6 +87,13 @@ with st.sidebar:
         st.markdown("### ⚙️ إعدادات العرض")
         frame_size = st.slider("حجم إطار الكتاب (%)", min_value=30, max_value=100, value=70, help="يصغر أو يكبر مساحة عرض الكتاب")
         zoom_level = st.slider("دقة الصورة (Zoom)", 1.0, 3.0, 1.5, 0.5)
+        
+        # --- [ حل مشكلة التداخل ] نقل أدوات الرسم هنا لتصبح القراءة مريحة ---
+        st.markdown("### 🖍️ أدوات التحديد والرسم")
+        drawing_mode = st.selectbox("الأداة النشطة:", ("freedraw", "rect"), format_func=lambda x: "قلم حر (رسم وتظليل)" if x=="freedraw" else "مربع تظليل صلب")
+        stroke_color = st.color_picker("لون قلم التظليل:", "#FFFF00")
+        
+        st.divider()
         api_key = st.text_input("🔑 مفتاح Gemini API:", type="password")
         
         if st.button("🧹 مسح الذاكرة", type="secondary"):
@@ -147,13 +153,10 @@ if st.session_state.active_book and saved_books:
             if view_mode == "📖 قراءة وتقليب سريع":
                 st.image(img_display, use_column_width=True)
             else:
-                draw_col1, draw_col2 = st.columns([2, 1])
-                with draw_col1: drawing_mode = st.selectbox("الأداة:", ("freedraw", "rect"), format_func=lambda x: "قلم حر" if x=="freedraw" else "مربع تحديد")
-                with draw_col2: stroke_color = st.color_picker("اللون:", "#FFFF00")
-                
                 canvas_key = f"canvas_{book_id}_{curr_page}"
                 initial_drawing = st.session_state.drawings.get(book_id, {}).get(str(curr_page), None)
 
+                # تم استدعاء أدوات الرسم مباشرة من القائمة الجانبية هنا لمنع التداخل
                 canvas_result = st_canvas(
                     fill_color="rgba(255, 255, 0, 0.3)",
                     stroke_width=3, stroke_color=stroke_color,
@@ -230,7 +233,6 @@ if st.session_state.active_book and saved_books:
 
     doc.close()
 else:
-    # واجهة ترحيبية أنيقة تمنع الشاشة السوداء في البداية
     st.markdown("""
     <div style="text-align: center; padding: 100px 20px;">
         <h1 style="color: #007bff; font-family: 'Tajawal', sans-serif;">📚 مرحباً بك في محرر تجوال الرقمي</h1>
