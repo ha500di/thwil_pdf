@@ -41,10 +41,7 @@ st.markdown("""
 # --- إدارة الذاكرة السحابية والمحلية ---
 if 'books_db' not in st.session_state: st.session_state.books_db = {} 
 if 'ocr_cache' not in st.session_state: st.session_state.ocr_cache = {}
-
-if 'current_page' not in st.session_state or not isinstance(st.session_state.current_page, dict): 
-    st.session_state.current_page = {}
-    
+if 'current_page' not in st.session_state: st.session_state.current_page = {}
 if 'active_book' not in st.session_state: st.session_state.active_book = None
 if 'user_notes' not in st.session_state: st.session_state.user_notes = {}
 
@@ -57,11 +54,10 @@ def save_workspace():
             "current_page": st.session_state.current_page
         }
         try:
-            # حفظ الإعدادات، الملاحظات، والنصوص
             with open(os.path.join(st.session_state.workspace_dir, "tajawal_workspace.json"), "w", encoding="utf-8") as f:
                 json.dump(data, f, ensure_ascii=False, indent=4)
         except Exception as e:
-            st.sidebar.error(f"خطأ في الحفظ التلقائي: {e}")
+            pass
 
 def load_workspace(path):
     json_path = os.path.join(path, "tajawal_workspace.json")
@@ -73,9 +69,9 @@ def load_workspace(path):
                 st.session_state.user_notes = data.get("user_notes", {})
                 st.session_state.current_page = data.get("current_page", {})
         except Exception as e:
-            st.sidebar.error(f"خطأ في قراءة بيانات مسار العمل: {e}")
+            pass
     
-    # تحميل الكتب بصيغة PDF تلقائياً من المجلد
+    # تحميل الكتب تلقائياً
     for file_name in os.listdir(path):
         if file_name.lower().endswith(".pdf"):
             if file_name not in st.session_state.books_db:
@@ -110,48 +106,49 @@ def jump_to_page(page_idx):
 with st.sidebar:
     st.title("📚 مكتبتي السحابية")
     
-    # --- قسم المزامنة والربط المباشر بالجهاز ---
-    st.markdown("### 📂 مسار المجلد (للحفظ التلقائي)")
-    st.markdown("<small style='color:gray'>ضع هنا مسار المجلد ليتم حفظ وقراءة الكتب والتعليقات منه تلقائياً.</small>", unsafe_allow_html=True)
-    workspace_input = st.text_input("المسار (مثال: C:/MyBooks أو /storage/emulated/0/Books):", value=st.session_state.get('workspace_dir', ''))
+    # --- قسم المزامنة (اختياري) ---
+    st.markdown("### 📂 مسار الحفظ التلقائي (اختياري)")
+    st.markdown("<small style='color:gray'>لأجهزة الكمبيوتر فقط: ضع مسار مجلد لحفظ عملك تلقائياً. (إذا كنت من الجوال تجاهل هذا المربع)</small>", unsafe_allow_html=True)
+    workspace_input = st.text_input("المسار (مثال: C:/MyBooks):", value=st.session_state.get('workspace_dir', ''))
     
-    if st.button("🔄 ربط ومزامنة المجلد"):
-        if os.path.isdir(workspace_input):
-            st.session_state.workspace_dir = workspace_input
-            load_workspace(workspace_input)
-            st.success("✅ تم ربط المجلد وجلب البيانات بنجاح!")
+    if st.button("🔄 ربط المجلد"):
+        if workspace_input.strip() and os.path.isdir(workspace_input.strip()):
+            st.session_state.workspace_dir = workspace_input.strip()
+            load_workspace(st.session_state.workspace_dir)
+            st.success("✅ تم ربط المجلد بنجاح!")
             st.rerun()
         else:
-            st.error("المسار غير صحيح أو المجلد غير موجود.")
+            # رسالة تحذيرية لا توقف عمل البرنامج
+            st.warning("⚠️ المسار غير موجود. يمكنك تجاهل هذا الخيار ورفع الكتاب مباشرة من الزر بالأسفل.")
 
     st.divider()
     
-    # --- قسم إضافة الكتب ---
-    st.markdown("### 📥 إضافة كتاب جديد")
-    st.markdown("<small style='color:gray'>تم تحسين الرفع ليدعم الجوالات التي تواجه مشاكل في رفع الـ PDF.</small>", unsafe_allow_html=True)
-    # تم إلغاء القيود (type=["pdf"]) للسماح لمتصفحات الجوال باختيار الملف، وسيتم الفلترة برمجياً.
-    uploaded_files = st.file_uploader("اختر ملف PDF من جهازك", accept_multiple_files=True)
+    # --- قسم إضافة الكتب (تم إصلاحه ليعمل فوراً) ---
+    st.markdown("### 📥 رفع كتاب جديد")
+    uploaded_files = st.file_uploader("اختر ملف PDF من جهازك", type=["pdf"], accept_multiple_files=True)
     
     if uploaded_files:
+        new_books_added = False
         for file in uploaded_files:
-            if file.name.lower().endswith(".pdf"):
-                if file.name not in st.session_state.books_db:
-                    file_bytes = file.getvalue()
-                    st.session_state.books_db[file.name] = file_bytes
-                    st.session_state.current_page[file.name] = 0
-                    st.session_state.active_book = file.name
-                    
-                    # حفظ نسخة من الكتاب في المسار لو كان مفعلاً
-                    if 'workspace_dir' in st.session_state and os.path.isdir(st.session_state.workspace_dir):
-                        try:
-                            with open(os.path.join(st.session_state.workspace_dir, file.name), "wb") as f:
-                                f.write(file_bytes)
-                        except Exception as e:
-                            st.warning(f"تم رفع الكتاب، ولكن تعذر حفظه في المسار: {e}")
-                            
-        save_workspace()
-        st.success("تم الحفظ في الذاكرة بنجاح!")
-        st.rerun()
+            if file.name not in st.session_state.books_db:
+                file_bytes = file.getvalue()
+                st.session_state.books_db[file.name] = file_bytes
+                st.session_state.current_page[file.name] = 0
+                st.session_state.active_book = file.name
+                new_books_added = True
+                
+                # حفظ نسخة في المجلد (إن وُجد) بصمت بدون التأثير على رفع الملف
+                if 'workspace_dir' in st.session_state and os.path.isdir(st.session_state.workspace_dir):
+                    try:
+                        with open(os.path.join(st.session_state.workspace_dir, file.name), "wb") as f:
+                            f.write(file_bytes)
+                    except Exception:
+                        pass 
+                        
+        if new_books_added:
+            save_workspace()
+            st.success("✅ تم حفظ الكتاب بنجاح وجاهز للقراءة!")
+            st.rerun()
 
     st.divider()
 
@@ -177,8 +174,6 @@ with st.sidebar:
         if st.button("🧹 مسح الذاكرة بالكامل", type="secondary"):
             st.session_state.clear()
             st.rerun()
-    else:
-        st.info("لا توجد كتب، ارفع كتاباً أو قم بربط مجلد للبدء.")
 
 # ==========================================
 # 2. منطقة العرض الرئيسية
@@ -224,7 +219,6 @@ if st.session_state.active_book and saved_books:
             st.markdown('</div>', unsafe_allow_html=True)
             
         with book_col:
-            # تم الاكتفاء بعرض الصورة بدون أدوات الرسم لتسريع وتقوية الأداء
             st.image(img_display, use_container_width=True)
 
         with nav_left:
@@ -249,12 +243,9 @@ if st.session_state.active_book and saved_books:
     with main_col_text:
         st.subheader("📝 النص المستخرج")
         
-        curr_page_str = str(curr_page) # تحويل لرقم الصفحة كنص ليتم حفظه بملف JSON بشكل سليم
+        curr_page_str = str(curr_page)
         if book_id not in st.session_state.ocr_cache: st.session_state.ocr_cache[book_id] = {}
         
-        # ==========================================
-        # 1. التصدير والاستيراد
-        # ==========================================
         with st.expander("📥 / 📤 تصدير واستيراد النص (ملف TXT)"):
             st.markdown("يمكنك تنزيل نصوص الكتاب كملف نصي، أو رفع ملف نصي تم تصحيحه مسبقاً لعرضه مع الصفحات.")
             
@@ -289,9 +280,6 @@ if st.session_state.active_book and saved_books:
                     st.success("تم توزيع النصوص على صفحات الكتاب بنجاح!")
                     st.rerun()
 
-        # ==========================================
-        # 2. ميزة البحث في النصوص
-        # ==========================================
         with st.expander("🔍 البحث في نصوص الكتاب"):
             search_query = st.text_input("أدخل الكلمة أو العبارة للبحث:")
             if search_query:
@@ -300,7 +288,6 @@ if st.session_state.active_book and saved_books:
                     if text and search_query in text:
                         found_pages.append(int(p_idx_str))
                 
-                # ترتيب الصفحات المكتشفة
                 found_pages.sort()
                 
                 if found_pages:
@@ -315,9 +302,6 @@ if st.session_state.active_book and saved_books:
                 else:
                     st.warning("⚠️ لم يتم العثور على الكلمة.")
 
-        # ==========================================
-        # 3. محرر النص الذكي والتعليقات
-        # ==========================================
         if curr_page_str not in st.session_state.ocr_cache[book_id] or st.session_state.ocr_cache[book_id][curr_page_str] == "":
             with st.spinner("جاري قراءة الصفحة..."):
                 try:
@@ -344,7 +328,6 @@ if st.session_state.active_book and saved_books:
                         st.error(f"خطأ: {e}")
 
         edited_text = st.text_area("محرر النص:", value=current_text, height=400, label_visibility="collapsed")
-        # الحفظ التلقائي في حال قمت بتعديل النص يدوياً داخل المربع
         if edited_text != current_text:
             st.session_state.ocr_cache[book_id][curr_page_str] = edited_text
             save_workspace()
@@ -358,7 +341,7 @@ if st.session_state.active_book and saved_books:
         if st.button("💾 حفظ الملاحظة"):
             st.session_state.user_notes[book_id][curr_page_str] = new_note
             save_workspace()
-            st.success("تم حفظ الملاحظة والمزامنة بنجاح!")
+            st.success("تم حفظ الملاحظة بنجاح!")
 
     doc.close()
 else:
@@ -367,7 +350,7 @@ else:
         <h1 style="color: #007bff; font-family: 'Tajawal', sans-serif;">📚 مرحباً بك في محرر تجوال الرقمي</h1>
         <p style="font-size: 20px; color: #666; margin-top: 20px;">تطبيقك الذكي لقراءة الكتب، البحث الذكي، وتصحيحها بالذكاء الاصطناعي.</p>
         <div style="background-color: #f1f3f5; padding: 20px; border-radius: 10px; display: inline-block; margin-top: 30px; border: 1px solid #e0e0e0;">
-            <p style="font-size: 18px; color: #333; margin: 0;">👉 <b>للبدء:</b> يرجى إدخال مسار مجلد من جهازك، أو رفع ملف PDF من القائمة الجانبية.</p>
+            <p style="font-size: 18px; color: #333; margin: 0;">👉 <b>للبدء:</b> يرجى رفع ملف PDF من القائمة الجانبية على اليمين.</p>
         </div>
     </div>
     """, unsafe_allow_html=True)
