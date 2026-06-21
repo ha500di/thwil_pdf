@@ -25,7 +25,6 @@ st.markdown("""
 if 'books_db' not in st.session_state: st.session_state.books_db = {} 
 if 'ocr_cache' not in st.session_state: st.session_state.ocr_cache = {}
 
-# --- [ هنا يكمن الحل ] التأكد من مسح الذاكرة القديمة إذا كانت رقماً ---
 if 'current_page' not in st.session_state or not isinstance(st.session_state.current_page, dict): 
     st.session_state.current_page = {}
     
@@ -102,7 +101,6 @@ with st.sidebar:
         zoom_level = st.slider("دقة الصورة", 1.0, 3.0, 1.5, 0.5)
         api_key = st.text_input("🔑 مفتاح Gemini API:", type="password")
         
-        # زر إضافي لمسح الذاكرة يدوياً إذا احتجت
         if st.button("🧹 مسح الذاكرة بالكامل", type="secondary"):
             st.session_state.clear()
             st.rerun()
@@ -145,9 +143,10 @@ if st.session_state.active_book and saved_books:
             stroke_width = st.slider("سماكة القلم", 1, 25, 5)
 
         page = doc.load_page(curr_page)
-        pix = page.get_pixmap(matrix=fitz.Matrix(zoom_level, zoom_level))
-        mode = "RGBA" if pix.alpha else "RGB"
-        img_display = Image.frombytes(mode, [pix.width, pix.height], pix.samples)
+        
+        # --- [ الحل هنا ] إجبار الخلفية على أن تكون بيضاء ومصمتة (alpha=False) ---
+        pix = page.get_pixmap(matrix=fitz.Matrix(zoom_level, zoom_level), alpha=False)
+        img_display = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
 
         canvas_key = f"canvas_{book_id}_{curr_page}"
         if book_id not in st.session_state.drawings: st.session_state.drawings[book_id] = {}
@@ -177,9 +176,9 @@ if st.session_state.active_book and saved_books:
         if curr_page not in st.session_state.ocr_cache[book_id]:
             with st.spinner("جاري قراءة الصفحة..."):
                 try:
-                    pix_ocr = page.get_pixmap(matrix=fitz.Matrix(2, 2))
-                    mode_ocr = "RGBA" if pix_ocr.alpha else "RGB"
-                    img_ocr = Image.frombytes(mode_ocr, [pix_ocr.width, pix_ocr.height], pix_ocr.samples)
+                    # نلغي الشفافية أيضاً هنا للـ OCR للضمان
+                    pix_ocr = page.get_pixmap(matrix=fitz.Matrix(2, 2), alpha=False)
+                    img_ocr = Image.frombytes("RGB", [pix_ocr.width, pix_ocr.height], pix_ocr.samples)
                     extracted_text = pytesseract.image_to_string(img_ocr, lang='ara')
                     st.session_state.ocr_cache[book_id][curr_page] = extracted_text
                 except Exception as e:
