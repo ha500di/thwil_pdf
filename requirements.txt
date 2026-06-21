@@ -1,6 +1,6 @@
-streamlit==1.39.0
+streamlit==1.36.0
 pymupdf
 pytesseract
 pillow
 google-generativeai
-streamlit-drawable-canvas
+streamlit-drawable-canvas==0.9.3
